@@ -1,6 +1,14 @@
 # PyScript-Test-Controller-for-ACRO-2020-Gantry-System
 An external Python script that is able to send commands to the Blackbox and assign jobs to the gantry device. Communication trhough serial port (Pyserial) in order to send g-code commands from text string input to binary data at input of BlackBox controller.
 
+Two Versions:
+
+1] Using PySerial to link through USB Connection, sending commands via serial port
+2] Utilizing Socket.io as a WebSocket API to communicate with OpenBuilds CONTROL GUI
+    - Interfacing with CONTROL GUI
+    - Automatic GRBL Handling
+    - Can use both GUI and script simultaneously
+
 
 
 ################################
