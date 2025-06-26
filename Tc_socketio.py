@@ -1,69 +1,85 @@
-import socketio
+import socketio 
 import datetime
 import time
 
-# Server => User
-# Client => OpenBuilds CONTROL
 
-# Instantiate Socket.io Client
-sio = socketio.Client()
+sio = socketio.Client(logger=False, engineio_logger=False)
 
-# Confirmation for good connection to GRBL through OpenBuilds CONTROL
 @sio.event 
 def connect():
     print("Connected to OpenBuilds CONTROL")
-    sio.emit('command', 'G0 X10 Y10 F1000')
-# Function to send a single command to the BlackBox Controller
-def send_command(cmd):
-    print("Sending g-code commands: " + str(cmd))
-    sio.emit('command', cmd)
-# Function to send multiple commands to the BlackBox Controller
-def job(cmds):
-    for i in cmds:
-        send_command(i)
-        time.sleep(0.5)
-      
-
+    
 @sio.event
 def disconnect(reason):
-    print("Disconnected from Openbuilds CONTROL! reason:", reason)
+    print("\nDisconnected from Openbuilds CONTROL! reason:", reason)
     
 @sio.event
 def connect_error(data):
     print("The connection failed!")
-
-@sio.on('serial')
+   
+@sio.on('console')
 def handle_serial(data):
-    if data.strip() in ("ok",""):
-        return
-    log("📡 Serial: " + str(data))
+    line = str(data).strip()
+    print("Console: " + line)
+
+@sio.on('*')
+def catch_all(event, data):
+    time.sleep(2)
+    log(f"Recieved event: {event} with data: {data} \n")
 
 @sio.on('status')
 def handle_status(data):
-    state = data.get('machine', {}).get('modals', {}).get('spindlestate')
-    position = data.get('machine', {}).get('position', {}).get('work')
-    if state or position:
-        log(f"🔄 State: {state} | Position: X={position['x']:.2f}, Y={position['y']:.2f}")
+    machine = data.get('machine', {})
+    state = machine.get('activeState') or machine.get('modals', {}).get('spindlestate', 'Unknown')
+    position = machine.get('position', {}).get('work')  
 
-@sio.on('alarm')
-def handle_alarm(data):
-    print("Alarm:", data)
+    # Write state and position to external text file
+    if position:
+        try:
+            x = float(position.get('x', 0.0))
+            y = float(position.get('y', 0.0))
+            z = float(position.get('z', 0.0))
+            
+            with open('output.txt', 'w') as f:
+                f.write(f"[{datetime.datetime.now()}] State: {state} | Position: X={x:.2f}, Y={y:.2f}, Z={z:.2f}\n")
+        except (TypeError, ValueError) as e:
+            print(f"[ERROR] Failed to parse position: {e}")
+    else:
+        print(f"[{datetime.datetime.now()}] State: {state} | Position: Unknown")
 
-# Time log for events
+# Time logger function
 def log(msg):
     print(f"[{datetime.datetime.now()}] {msg}")
 
+# Function to send a single command to the BlackBox Controller
+def send_command(cmd):
+    sio.emit('gcode', {'code': cmd})
+    log(f"Sent: {cmd}")
 
-cmds = [
-    'G21',      # Set units to mm
-    'G90',      # Set absolute positioning
-    '$H',       # Home the machine
-    'G92 X0 Y0 Z0',  # Set current position as zero (optional, for your workflow)
-]
+# Send object to limit switches and set as origin
+def set_zero():
+    send_command('G28')
+    time.sleep(10)
+    send_command('')
+
+    log("Zeroing complete")
+
+# We can try uploading a G-code file to the OpenBuildsCONTROL GUI and see if it will open and run it
+def gcode_file_upload(gfile):
+    with open(gfile, 'r') as f:
+        gcode = f.read()
+        sio.emit('api', {'fileContent':gcode})
+        log(f"Sent G-code file: {gfile}")
 
 
-try:
-    sio.connect('http://localhost:3000')  # Connecting to controller over port 3000 using WebSockets
-    sio.wait()
-except Exception as e:
-    log(f"Exception: {e}" )
+def main():
+    try:
+        sio.connect('http://localhost:3000')  # Connecting to controller over port 3000
+        sio.wait()
+    except Exception as e:
+        log(f"Exception: {e}" )
+    gfile = 'gfile.gcode'
+    time.sleep(5)
+    gcode_file_upload(gfile)
+
+main()
