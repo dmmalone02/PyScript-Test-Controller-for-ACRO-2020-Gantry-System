@@ -1,11 +1,11 @@
-import socketio 
+import socketio  # type: ignore
 import datetime
 import time
 
 
 sio = socketio.Client(logger=False, engineio_logger=False)
 
-## Socket.io Decorator Functions ##
+## Socket.io Decorator Functions 
 @sio.event 
 def connect():
     print("Connected to OpenBuilds CONTROL") # Connection established
@@ -24,7 +24,10 @@ def catch_all(event, data):
         time.sleep(2)
         log(f"Recieved event: {event} with data: {data} \n")
 
-       
+@sio.on('serial')
+def handle_serial(data):
+    log(f"Grbl: {data}")       
+
 @sio.on('status')  # Retrieve machine position and state
 def handle_status(data):
     machine = data.get('machine', {})
@@ -32,7 +35,10 @@ def handle_status(data):
     position = machine.get('position', {}).get('work')  
 
     
-    if position:    # Write state and position to external text file
+    if position:    # Write state and position to external text file to monitor changes
+                    # Ensure position values are floats, defaulting to 0.0 if not present
+                    # and handle any potential parsing errors
+                    # Use datetime to log the time of the state and position
         try:
             x = float(position.get('x', 0.0))
             y = float(position.get('y', 0.0))
@@ -45,28 +51,41 @@ def handle_status(data):
     else:
         print(f"[{datetime.datetime.now()}] State: {state} | Position: Unknown")
 
-#-----------------------------------------------------------------------------------------------------------#
 
-# Time logger function
+
+# Time logger function using datetime
 def log(msg):
     print(f"[{datetime.datetime.now()}] {msg}")
 
 # Function to send a single command to the BlackBox Controller
-def send_command(cmd):
-    sio.call('data', {'data': cmd}, timeout=10) # Added timeout to see if the server is even receiving anything
+def send_command(type, cmd):
+    sio.emit('runCommand', cmd)
     log(f"Sent: {cmd}")
-    
-# Set zero
-def set_zero():
-    send_command('$J=G91G21Y100F5000')
-    time.sleep(2)
-    log("Zeroing complete")
 
-# We can try uploading a G-code file to the OpenBuildsCONTROL GUI and see if it will open and run it
-def gcode_file_upload(gfile):
+# Set an individual axis to zero
+def setToZero(axis):
+    sio.emit('setToZero', axis)
+    time.sleep(0.1)
+    log(f"Set {axis} axis to zero")
+
+# Set all axes to zero
+def set_all_zero():
+    setToZero('x')
+    setToZero('y')
+    setToZero('z')
+    log("All axes set to zero")
+
+# Go to zero point
+def goto_zero():
+    sio.emit('gotoZero')
+    time.sleep(5)
+    log("Machine moved to zero point")
+
+# Uploading a G-code file to the OpenBuildsCONTROL GUI for multiple movements
+def file_upload(gfile):
     with open(gfile, 'r') as f:
         gcode = f.read()
-        sio.emit('api', {'fileContent':gcode})
+        sio.emit('', {'fileContent':gcode})
         log(f"Sent G-code file: {gfile}")
 
 
@@ -77,13 +96,19 @@ def main():
     except Exception as e:
         log(f"Exception: {e}" )
         
-    time.sleep(2)
+    time.sleep(2) 
     print("status: connected")
     time.sleep(10)
     print("status: setting to zero")
-    set_zero()
+    set_all_zero()  # Set all axes to zero
+    time.sleep(2)
     print("status: coordinates set to zero")
-   # gfile = 'gfile.gcode'
-    #gcode_file_upload(gfile)
+    time.sleep(10) # After cooridinates are set to zero, move to a random point in CONTROL GUI
+    goto_zero()
+    time.sleep(2)
+    print("status: moved to zero point")
+    time.sleep(1)
+    print("status: machine in idle state")
     sio.wait()
+
 main()
