@@ -65,21 +65,27 @@ def send_command(type, cmd):
 # Set an individual axis to zero
 def setToZero(axis):
     sio.emit('setToZero', axis)
-    time.sleep(0.1)
+    time.sleep(3)
     log(f"Set {axis} axis to zero")
 
 # Set all axes to zero
 def set_all_zero():
-    setToZero('x')
-    setToZero('y')
-    setToZero('z')
+    sio.emit("runJob", {
+        "data": "G10 L20 P1 X0 Y0 Z0\n",
+        "isJob": False,
+        "completedMsg": "Axes set to zero"
+    })
     log("All axes set to zero")
 
 # Go to zero point
 def goto_zero():
-    sio.emit('gotoZero')
-    time.sleep(5)
-    log("Machine moved to zero point")
+    sio.emit("runJob", {
+        "data": "G0 X0 Y0 Z0\n",
+        "isJob": False,
+        "completedMsg": "Machine returned to zero"
+    })
+    log("Sent move to zero (G0 X0 Y0 Z0)")
+
 
 # Uploading a G-code file to the OpenBuildsCONTROL GUI for multiple movements
 def file_upload(gfile):
