@@ -13,14 +13,14 @@ The purpose of this script is to be able to control the OpenBuilds ACRO 2020 Gan
 - Monitor system status
 - Monitor position of gantry and output to text file
 - Recieve responses directly from GRBL (type, response)
-- Send g-code commands
+- Send g-code commands to CONTROL to be executed by machine
 
 <details>
 <summary>G-Code Command List</summary>
     
 ### G0,G1: Linear Motions (G0 for non-extrusion movements)
-G0
-G1 [A<pos>] [B<pos>] [C<pos>] [E<pos>] [F<rate>] [S<power>] [U<pos>] [V<pos>] [W<pos>] [X<pos>] [Y<pos>] [Z<pos>]
+G
+G1 
 ### G2: Clockwise Arc
 G2 
 ### G3: Counter-clockwise Arc
