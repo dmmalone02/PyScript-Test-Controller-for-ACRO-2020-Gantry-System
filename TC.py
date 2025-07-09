@@ -1,6 +1,10 @@
+import sys
 import socketio  # type: ignore
 import datetime
 import time
+import PythonSample
+from NatNetClient import NatNetClient
+import threading
 
 
 sio = socketio.Client(logger=False, engineio_logger=False)
@@ -23,6 +27,8 @@ def catch_all(event, data):
     if not event.startswith('sysinfo'): # Ignore recurring system info messages
         time.sleep(2)
         log(f"Recieved event: {event} with data: {data} \n")      
+
+#ADD: if user wants machine and position state to be outputted, enter yes, otherwise the output will be muted
 
 @sio.on('status')  # Retrieve machine position and state
 def handle_status(data):
@@ -123,6 +129,55 @@ def goto_zero():
     time.sleep(10)
 
 
+
+### OptiTrack NatNet Streaming ###
+
+
+# From PythonSample.py line 172
+def my_parse_args(arg_list, args_dict):
+    # set up base values
+    arg_list_len = len(arg_list)
+    if arg_list_len > 1:
+        args_dict["serverAddress"] = arg_list[1]
+        if arg_list_len > 2:
+            args_dict["clientAddress"] = arg_list[2]
+        if arg_list_len > 3:
+            if len(arg_list[3]):
+                args_dict["use_multicast"] = True
+                if arg_list[3][0].upper() == "U":
+                    args_dict["use_multicast"] = False
+        if arg_list_len > 4:
+            args_dict["stream_type"] = arg_list[4]
+    return args_dict
+
+
+def MoCap_Client():
+    ask = input('Use OptiTrack Motion Capture software? [Y/N]')
+    if ask == 'y':
+        # Set these to appropiate parameters
+        optionsDict = {}
+        optionsDict["clientAddress"] = "XXX.X.X.X"
+        optionsDict["serverAddress"] = "YYY.Y.Y.Y"
+        optionsDict["use_multicast"] = None
+        optionsDict["stream_type"] = None
+
+        # This will create a new NatNet client
+        optionsDict = my_parse_args(sys.argv, optionsDict)
+        streaming_client = NatNetClient()
+        streaming_client.set_client_address(optionsDict["clientAddress"])
+        streaming_client.set_server_address(optionsDict["serverAddress"])
+        if streaming_client.connected() is True:
+            print("Client connection succesful\n")
+            PythonSample.print_configuration(streaming_client)
+            PythonSample.print_commands()
+            run = input('Begin datastream? [Y/N]\n')
+            if run == 'y':
+                streaming_client.run()
+        else:
+            return("Could not connect properly")
+
+    
+
 # Main function to connect to the OpenBuilds CONTROL GUI and perform operations
 def main():
     try:
@@ -139,6 +194,7 @@ def main():
     goto_zero()
     print("status: machine in idle state")
     runCommand("G0 X10 Y10 Z10")  # Example command to move the machine
+    MoCap_Client()
     sio.wait()
 
 main()
