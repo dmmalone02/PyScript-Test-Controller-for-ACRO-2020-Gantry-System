@@ -17,7 +17,8 @@ The purpose of this script is to be able to control the OpenBuilds ACRO 2020 Gan
 
 <details>
 <summary>G-Code Command List</summary>
-    
+
+-- in progress--
 ### G0,G1: Linear Motions (G0 for non-extrusion movements)
 G
 G1 
