@@ -2,17 +2,17 @@ import sys
 import socketio  # type: ignore
 import datetime
 import time
-import PythonSample
-from NatNetClient import NatNetClient
-import threading
-
+import csv
 
 sio = socketio.Client(logger=False, engineio_logger=False)
 
 ## Socket.io Decorator Functions 
+is_connected = False
 @sio.event 
 def connect():
     print("Connected to OpenBuilds CONTROL") # Connection established
+    is_connected = True
+
 
 @sio.event
 def disconnect(reason):
@@ -69,7 +69,7 @@ def log(msg):
 def runCommand(cmd):
     sio.emit('runCommand', cmd)
     log(f"Sent: {cmd}")
-    time.sleep(5)
+    time.sleep(20)
 
 # Function to run a job 
 def runJob(cmd):
@@ -128,57 +128,19 @@ def goto_zero():
     print("status: moved to zero point")
     time.sleep(10)
 
+def bash_command():
+    x, y, z = float(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3])
+    cmd = (f'G0 X{x} Y{y} Z{z}')
+    runCommand(cmd)
 
+def dataOutput():
+    with open('data.csv', 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerows()
 
-### OptiTrack NatNet Streaming ###
-
-
-# From PythonSample.py line 172
-def my_parse_args(arg_list, args_dict):
-    # set up base values
-    arg_list_len = len(arg_list)
-    if arg_list_len > 1:
-        args_dict["serverAddress"] = arg_list[1]
-        if arg_list_len > 2:
-            args_dict["clientAddress"] = arg_list[2]
-        if arg_list_len > 3:
-            if len(arg_list[3]):
-                args_dict["use_multicast"] = True
-                if arg_list[3][0].upper() == "U":
-                    args_dict["use_multicast"] = False
-        if arg_list_len > 4:
-            args_dict["stream_type"] = arg_list[4]
-    return args_dict
-
-
-def MoCap_Client():
-    ask = input('Use OptiTrack Motion Capture software? [Y/N]')
-    if ask == 'y':
-        # Set these to appropiate parameters
-        optionsDict = {}
-        optionsDict["clientAddress"] = "XXX.X.X.X"
-        optionsDict["serverAddress"] = "YYY.Y.Y.Y"
-        optionsDict["use_multicast"] = None
-        optionsDict["stream_type"] = None
-
-        # This will create a new NatNet client
-        optionsDict = my_parse_args(sys.argv, optionsDict)
-        streaming_client = NatNetClient()
-        streaming_client.set_client_address(optionsDict["clientAddress"])
-        streaming_client.set_server_address(optionsDict["serverAddress"])
-        if streaming_client.connected() is True:
-            print("Client connection succesful\n")
-            PythonSample.print_configuration(streaming_client)
-            PythonSample.print_commands()
-            run = input('Begin datastream? [Y/N]\n')
-            if run == 'y':
-                streaming_client.run()
-        else:
-            return("Could not connect properly")
-
-    
 
 # Main function to connect to the OpenBuilds CONTROL GUI and perform operations
+
 def main():
     try:
         sio.connect('http://localhost:3000')  # Connecting to controller over port 3000
@@ -187,14 +149,12 @@ def main():
         log(f"Exception: {e}" )
         
     time.sleep(2) 
-    print("status: connected")
-    time.sleep(10)
-    print("status: setting to zero")
-    set_all_zero()  
-    goto_zero()
-    print("status: machine in idle state")
-    runCommand("G0 X10 Y10 Z10")  # Example command to move the machine
-    MoCap_Client()
+    print("Status: Connection established successfully")
+    bash_command()
     sio.wait()
 
-main()
+
+if __name__ == "__main__":
+    main()
+
+
