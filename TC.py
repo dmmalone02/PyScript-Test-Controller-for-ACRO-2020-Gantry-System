@@ -3,6 +3,8 @@ import socketio  # type: ignore
 import datetime
 import time
 import csv
+import numpy as np # type: ignore
+
 
 sio = socketio.Client(logger=False, engineio_logger=False)
 
@@ -33,7 +35,6 @@ def catch_all(event, data):
 @sio.on('status')  # Retrieve machine position and state
 def handle_status(data):
     machine = data.get('machine', {})
-    state = machine.get('activeState') or machine.get('modals', {}).get('spindlestate', 'Unknown')
     position = machine.get('position', {}).get('work')  
 
     if position:    # Write state and position to external text file to monitor changes
@@ -42,16 +43,17 @@ def handle_status(data):
                     # Position is in millimeters
                     # Use datetime to log the time of the state and position
         try:
+            
             x = float(position.get('x', 0.0))
             y = float(position.get('y', 0.0))
             z = float(position.get('z', 0.0))
-            
-            with open('output.txt', 'w') as f:
-                f.write(f"[{datetime.datetime.now()}] State: {state} | Position: X={x:.2f}, Y={y:.2f}, Z={z:.2f}\n")
+
+            with open('data.csv', 'w') as f:
+                f.write(f"[{datetime.datetime.now()}] Position: X={x:.2f}, Y={y:.2f}, Z={z:.2f}\n")
         except (TypeError, ValueError) as e:
             print(f"[ERROR] Failed to parse position: {e}")
     else:
-        print(f"[{datetime.datetime.now()}] State: {state} | Position: Unknown")
+        print(f"[{datetime.datetime.now()}] Position: Unknown")
 
 
 # From https://builds.openbuilds.com/threads/reading-values-from-openbuilds-control-software.15867/
@@ -133,10 +135,83 @@ def bash_command():
     cmd = (f'G0 X{x} Y{y} Z{z}')
     runCommand(cmd)
 
-def dataOutput():
-    with open('data.csv', 'w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerows()
+import numpy as np  # type: ignore
+
+
+
+
+def job():
+    # Set total space size
+    limitX = 1850
+    limitY = 1850
+
+    print("Enter grid size:")
+    print(f"Maximum space is {limitX}x{limitY} units (X x Y).")
+    try:
+        grid_size_x = int(input("Grid size X: "))
+        grid_size_y = int(input("Grid size Y: "))
+        if grid_size_x <= 0 or grid_size_y <= 0:
+            raise ValueError("Grid dimensions must be positive integers.")
+    except ValueError as e:
+        print(f"Invalid grid size. {e}")
+        return None
+
+    # Create grid and compute size of each cell in units
+    grid_size = (grid_size_x + 1, grid_size_y +1)
+    cell_width = limitX / grid_size_x
+    cell_height = limitY / grid_size_y
+    matrix = np.zeros(grid_size, dtype=int)
+
+    # Get start position
+    print("Enter start position (grid coordinates):")
+    try:
+        start_x = int(input("Start X (grid): "))
+        start_y = int(input("Start Y (grid): "))
+        if not (0 <= start_x < grid_size_x) or not (0 <= start_y < grid_size_y):
+            raise ValueError("Start position out of bounds.")
+    except ValueError as e:
+        print(f"Invalid start position. {e}")
+        return None
+
+    start_position = (start_x, start_y)
+
+    # Get end position
+    print("Enter end position (grid coordinates):")
+    try:
+        end_x = int(input("End X (grid): "))
+        end_y = int(input("End Y (grid): "))
+        if not (0 <= end_x < grid_size_x) or not (0 <= end_y < grid_size_y):
+            raise ValueError("End position out of bounds.")
+    except ValueError as e:
+        print(f"Invalid end position. {e}")
+        return None
+
+    end_position = (end_x, end_y)
+
+    # Generate coordinate mapping for each cell
+    coordinate_map = np.empty(grid_size, dtype=object)
+    for i in range(grid_size_x):
+        for j in range(grid_size_y):
+            x_coord = round(i * cell_width, 2)
+            y_coord = round(j * cell_height, 2)
+            coordinate_map[i, j] = (x_coord, y_coord)
+            runJob(f"G0 X{coordinate_map[x_coord]} Y{coordinate_map[y_coord]}\n")
+            time.sleep(30)
+
+        #   Insert bash command to collect RSSI  #
+        #   Log position into .csv file          #
+
+            
+
+    return grid_size, start_position, end_position, matrix, coordinate_map
+
+
+
+
+
+
+    
+        
 
 
 # Main function to connect to the OpenBuilds CONTROL GUI and perform operations
@@ -150,11 +225,24 @@ def main():
         
     time.sleep(2) 
     print("Status: Connection established successfully")
-    bash_command()
     sio.wait()
 
 
 if __name__ == "__main__":
     main()
+    result = job()
 
+    if result:
+        grid_size, start_position, end_position, matrix, coordinate_map = result
+
+        print("\nGrid created with size:", grid_size)
+        print("Start position (grid):", start_position)
+        print("End position (grid):", end_position)
+        print("\nStart real-world coordinates:", coordinate_map[start_position])
+        print("End real-world coordinates:", coordinate_map[end_position])
+        print("\nExample of coordinate map [i][j] = (x, y):")
+        for i in range(grid_size[0]):
+            for j in range(grid_size[1]):
+                print(f"[{i}][{j}] -> {coordinate_map[i][j]}")
+            print()  # Newline between rows
 
