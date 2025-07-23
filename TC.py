@@ -1,9 +1,10 @@
-import sys
+ import sys
 import socketio  # type: ignore
 import datetime
 import time
 import csv
 import numpy as np # type: ignore
+import subprocess
 
 
 sio = socketio.Client(logger=False, engineio_logger=False)
@@ -209,7 +210,6 @@ def job():
 
 
 
-
     
         
 
@@ -230,6 +230,60 @@ def main():
 
 if __name__ == "__main__":
     main()
+    positions = [ (185,0), (370,0), (555, 0), (740, 0) ]
+           
+
+
+# Default parameter 
+node_id = "171" 
+iterations = 10
+username = "ucanlab"
+network = 2
+
+
+# Output file and matching pattern from bash output (regex)
+output_csv = os.path.expanduser("~/rssi_collection.csv")
+rssi_pattern = re.compile(r"\b(\d+)\s+(-\d+)\s*dBm", re.MULTILINE)
+
+
+# Empty matrix to store the extracted datas
+data = []
+   
+for x,y in positions: 
+   
+    cmd = [ "bash", "test.sh", "-l", node_id, "-k", str(iterations), "-n", str(network), "-u", username ]
+
+    result = subprocess.run(
+        cmd, 
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+     )
+    
+    if result.returncode != 0: 
+        print(f" Error at ({x},{y}): {result.stderr.strip()}")
+
+    
+    matches = rssi_pattern.findall(result.stdout)
+   
+    rssi_values = []
+    
+    for node,rssi in matches:
+        if node == node_id:
+            rssi_values.append(int(rssi))
+
+    data.append([x, y, rssi_values])
+
+print(matches)
+
+header = ["X", "Y", "Pi"]
+with open(output_csv, "w", newline="") as file: 
+    writer = csv.writer(file)
+
+    writer.writerow(header)
+    for row in data: 
+        writer.writerow([row[0], row[1], row[2]])
+
     result = job()
 
     if result:
@@ -245,4 +299,3 @@ if __name__ == "__main__":
             for j in range(grid_size[1]):
                 print(f"[{i}][{j}] -> {coordinate_map[i][j]}")
             print()  # Newline between rows
-
