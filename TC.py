@@ -24,11 +24,11 @@ def disconnect(reason):
 def connect_error(data):
     print("The connection failed!") # Failed connection
    
-@sio.on('*')
-def catch_all(event, data):
-    if not event.startswith('sysinfo'): # Ignore recurring system info messages
-        time.sleep(2)
-        log(f"Recieved event: {event} with data: {data} \n")      
+#@sio.on('*')
+#def catch_all(event, data):
+    #if not event.startswith('sysinfo'): # Ignore recurring system info messages
+        #time.sleep(2)
+        #log(f"Recieved event: {event} with data: {data} \n")      
 
 @sio.on('status')  # Retrieve machine position and state
 def handle_status(data):
@@ -178,12 +178,55 @@ def gridJob():
             x_coord = round(i * cell_width, 2)
             y_coord = round(j * cell_height, 2)
             coordinate_map[i, j] = (x_coord, y_coord)
-            #runJob(f"G0 X{x_coord} Y{y_coord}\n")
+            runJob(f"G0 X{x_coord} Y{y_coord}\n")
+            # collect rssi
+            rssi_collect(x_coord, y_coord)
             time.sleep(30)
 
     return grid_size, start_position, end_position, matrix, coordinate_map   
 
+def rssi_collect(x, y):
+    node_id = "171" 
+    iterations = 10
+    username = "ucanlab"
+    network = 2
+    cmd = [ "bash", "test.sh", "-l", node_id, "-k", str(iterations), "-n", str(network), "-u", username ]
+    data = []
+    rssi_pattern = re.compile(r"\b(\d+)\s+(-\d+)\s*dBm", re.MULTILINE)
 
+    result = subprocess.run(
+        cmd, 
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    if result.returncode != 0: 
+        print(f" Error at ({x},{y}): {result.stderr.strip()}")
+
+    matches = rssi_pattern.findall(result.stdout)
+
+    rssi_values = []
+    
+    for node,rssi in matches:
+        if node == node_id:
+            rssi_values.append(int(rssi))
+
+    data.append([x, y, rssi_values])
+
+    print(matches)
+    print(data)
+    
+def write_file():
+    output_csv = os.path.expanduser("~/rssi_collection.csv")
+    header = ["X", "Y", "Pi"]
+    with open(output_csv, "w", newline="") as file: 
+        writer = csv.writer(file)
+        writer.writerow(header)
+        for row in data: 
+            writer.writerow([row[0], row[1], row[2]])
+    print(f"Data written to {output_csv}")
+
+# Austin's script
 def rssi_collection():
     # Default parameter 
     node_id = "171" 
@@ -239,8 +282,8 @@ def display_menu():
     print("1. Home machine")
     print("2. Set origin (zero)")
     print("3. Define grid")
-    print("4. Run full sweep")
-    print("5. Exit")
+    print("4. Exit")
+    
 
 def home_machine():
     print(">> Sending homing command...")
@@ -255,18 +298,30 @@ def set_origin():
     print(">> Origin set to current position.")
 
 def define_grid():
-    gridJob()
+    result = gridJob()
+    
     c = input("Run RSSI sweep? (y/n): ")
     if c.lower() == 'y':
         print(">> Running RSSI sweep...")
         rssi_collection()  # Collect RSSI data
+    else:
+        print(">> RSSI sweep skipped.")
+        return 
+    
+    if result:
+        grid_size, start_position, end_position, matrix, coordinate_map = result
 
+        print("\nGrid created with size:", grid_size)
+        print("Start position (grid):", start_position)
+        print("End position (grid):", end_position)
+        print("\nStart real-world coordinates:", coordinate_map[start_position])
+        print("End real-world coordinates:", coordinate_map[end_position])
+        print("\nExample of coordinate map [i][j] = (x, y):")
+        for i in range(grid_size[0]):
+            for j in range(grid_size[1]):
+                print(f"[{i}][{j}] -> {coordinate_map[i][j]}")
+            print()  # Newline between rows
 
-
-
-def run_sweep():
-    print(">> Running RSSI sweep...")
-    rssi_collection(grid_x, grid_y)
 
 def menu():
     while True:
@@ -281,17 +336,12 @@ def menu():
         elif choice == "3":
             define_grid()
         elif choice == "4":
-            run_sweep()
-        elif choice == "5":
             print("Exiting...")
             break
 
         else:
             print("Invalid choice. Please try again.")
         
-
-
-# Main function to connect to the OpenBuilds CONTROL GUI and perform operations
 
 def setup():
     try:
@@ -309,39 +359,13 @@ def setup():
     print("Status: Homing completed")
     time.sleep(2)
 
+def startup_messages():
+    print("Welcome to the OpenBuilds CONTROL Python Client V1.01!")
+    print("You can run commands, jobs, or set axes to zero externally to control gantry")
+    print("You can also specify grid points in coordinate space for gantry and collect RSSI values at each point.")
 
 if __name__ == "__main__":
     setup()
-    print("Welcome to the OpenBuilds CONTROL Python Client V1.01!")
-    print("You can run commands, jobs, or set axes to zero externally to control gantry")
-    print("You can also specify grid points in coordinate space and have gantry collect RSSI values at each point.")
-    try:
-        a = input("Press Enter to continue or type 'exit' to quit: ")
-        if a.lower() == 'exit':
-            print("Exiting...")
-            sys.exit(0)
-    except KeyboardInterrupt:
-        print("\nKeyboardInterrupt detected. Exiting...")
-    menu()
-    
-
-    
-    
- 
-    
-    if result:
-        grid_size, start_position, end_position, matrix, coordinate_map = result
-
-        print("\nGrid created with size:", grid_size)
-        print("Start position (grid):", start_position)
-        print("End position (grid):", end_position)
-        print("\nStart real-world coordinates:", coordinate_map[start_position])
-        print("End real-world coordinates:", coordinate_map[end_position])
-        print("\nExample of coordinate map [i][j] = (x, y):")
-        for i in range(grid_size[0]):
-            for j in range(grid_size[1]):
-                print(f"[{i}][{j}] -> {coordinate_map[i][j]}")
-            print()  # Newline between rows
-    
+    startup_messages()
     sio.wait()       
 
