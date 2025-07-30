@@ -1,22 +1,21 @@
- import sys
+import sys
 import socketio  # type: ignore
 import datetime
 import time
 import csv
 import numpy as np # type: ignore
 import subprocess
-
+import os
+import re
 
 sio = socketio.Client(logger=False, engineio_logger=False)
 
 ## Socket.io Decorator Functions 
-is_connected = False
+
 @sio.event 
 def connect():
     print("Connected to OpenBuilds CONTROL") # Connection established
-    is_connected = True
-
-
+    
 @sio.event
 def disconnect(reason):
     print("\nDisconnected from Openbuilds CONTROL! reason:", reason)  # Disconnection detected
@@ -30,8 +29,6 @@ def catch_all(event, data):
     if not event.startswith('sysinfo'): # Ignore recurring system info messages
         time.sleep(2)
         log(f"Recieved event: {event} with data: {data} \n")      
-
-#ADD: if user wants machine and position state to be outputted, enter yes, otherwise the output will be muted
 
 @sio.on('status')  # Retrieve machine position and state
 def handle_status(data):
@@ -56,13 +53,6 @@ def handle_status(data):
     else:
         print(f"[{datetime.datetime.now()}] Position: Unknown")
 
-
-# From https://builds.openbuilds.com/threads/reading-values-from-openbuilds-control-software.15867/
-#socket.emit("runJob", {
-    #data = "G1 .... gcode block with \n linebreaks etc",
-    #isJob = true, // if isjob==true, it gets stored and can be retrieved when the UI restart/refreshes, use for actual jobs, for quick little tasks, set to false
-    #completedMsg = "String you want to print in control in a popup on completion"
-#});
 
 # Time logger function using datetime
 def log(msg):
@@ -131,17 +121,8 @@ def goto_zero():
     print("status: moved to zero point")
     time.sleep(10)
 
-def bash_command():
-    x, y, z = float(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3])
-    cmd = (f'G0 X{x} Y{y} Z{z}')
-    runCommand(cmd)
 
-import numpy as np  # type: ignore
-
-
-
-
-def job():
+def gridJob():
     # Set total space size
     limitX = 1850
     limitY = 1850
@@ -159,9 +140,10 @@ def job():
 
     # Create grid and compute size of each cell in units
     grid_size = (grid_size_x + 1, grid_size_y +1)
-    cell_width = limitX / grid_size_x
+    cell_width = limitX / (grid_size_x + 1)
+    cell_height = limitY / (grid_size_y + 1)
     cell_height = limitY / grid_size_y
-    matrix = np.zeros(grid_size, dtype=int)
+    matrix = np.zeros(grid_size, dtype=int) # Create a matrix to store the grid values (initiallly with zeros)
 
     # Get start position
     print("Enter start position (grid coordinates):")
@@ -196,27 +178,122 @@ def job():
             x_coord = round(i * cell_width, 2)
             y_coord = round(j * cell_height, 2)
             coordinate_map[i, j] = (x_coord, y_coord)
-            runJob(f"G0 X{coordinate_map[x_coord]} Y{coordinate_map[y_coord]}\n")
+            #runJob(f"G0 X{x_coord} Y{y_coord}\n")
             time.sleep(30)
 
-        #   Insert bash command to collect RSSI  #
-        #   Log position into .csv file          #
-
-            
-
-    return grid_size, start_position, end_position, matrix, coordinate_map
+    return grid_size, start_position, end_position, matrix, coordinate_map   
 
 
+def rssi_collection():
+    # Default parameter 
+    node_id = "171" 
+    iterations = 10
+    username = "ucanlab"
+    network = 2
+    positions = [ (185,0), (370,0), (555, 0), (740, 0) ]
+
+    # Output file and matching pattern from bash output (regex)
+    output_csv = os.path.expanduser("~/rssi_collection.csv")
+    rssi_pattern = re.compile(r"\b(\d+)\s+(-\d+)\s*dBm", re.MULTILINE)
 
 
-
+    # Empty matrix to store the extracted datas
+    data = []
     
+    for x,y in positions: 
+        cmd = [ "bash", "test.sh", "-l", node_id, "-k", str(iterations), "-n", str(network), "-u", username ]
+
+        result = subprocess.run(
+            cmd, 
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        if result.returncode != 0: 
+            print(f" Error at ({x},{y}): {result.stderr.strip()}")
+
+        matches = rssi_pattern.findall(result.stdout)
+
+        rssi_values = []
+        
+        for node,rssi in matches:
+            if node == node_id:
+                rssi_values.append(int(rssi))
+
+        data.append([x, y, rssi_values])
+
+    print(matches)
+
+    header = ["X", "Y", "Pi"]
+    with open(output_csv, "w", newline="") as file: 
+        writer = csv.writer(file)
+
+        writer.writerow(header)
+        for row in data: 
+            writer.writerow([row[0], row[1], row[2]])
+
+
+def display_menu():
+    print("\n=== Main Menu ===")
+    print("1. Home machine")
+    print("2. Set origin (zero)")
+    print("3. Define grid")
+    print("4. Run full sweep")
+    print("5. Exit")
+
+def home_machine():
+    print(">> Sending homing command...")
+    runCommand("$H")  # Home all axes
+    print(">> Homing command sent. Waiting for completion...")
+    time.sleep(10)  # Wait for homing to complete
+    print(">> Homing completed successfully.")
+
+def set_origin():
+    print(">> Setting origin to current position...")
+    set_all_zero()  # Set all axes to zero
+    print(">> Origin set to current position.")
+
+def define_grid():
+    gridJob()
+    c = input("Run RSSI sweep? (y/n): ")
+    if c.lower() == 'y':
+        print(">> Running RSSI sweep...")
+        rssi_collection()  # Collect RSSI data
+
+
+
+
+def run_sweep():
+    print(">> Running RSSI sweep...")
+    rssi_collection(grid_x, grid_y)
+
+def menu():
+    while True:
+        display_menu()
+        time.sleep(1)
+        choice = input("Enter your choice: ")
+
+        if choice == "1":
+            home_machine()
+        elif choice == "2":
+            set_origin()
+        elif choice == "3":
+            define_grid()
+        elif choice == "4":
+            run_sweep()
+        elif choice == "5":
+            print("Exiting...")
+            break
+
+        else:
+            print("Invalid choice. Please try again.")
         
 
 
 # Main function to connect to the OpenBuilds CONTROL GUI and perform operations
 
-def main():
+def setup():
     try:
         sio.connect('http://localhost:3000')  # Connecting to controller over port 3000
         
@@ -225,67 +302,33 @@ def main():
         
     time.sleep(2) 
     print("Status: Connection established successfully")
-    sio.wait()
+    time.sleep(1)
+    print("Status: Homing all axes...")
+    runCommand("$H")  # Home all axes
+    time.sleep(10)  # Wait for homing to complete
+    print("Status: Homing completed")
+    time.sleep(2)
 
 
 if __name__ == "__main__":
-    main()
-    positions = [ (185,0), (370,0), (555, 0), (740, 0) ]
-           
-
-
-# Default parameter 
-node_id = "171" 
-iterations = 10
-username = "ucanlab"
-network = 2
-
-
-# Output file and matching pattern from bash output (regex)
-output_csv = os.path.expanduser("~/rssi_collection.csv")
-rssi_pattern = re.compile(r"\b(\d+)\s+(-\d+)\s*dBm", re.MULTILINE)
-
-
-# Empty matrix to store the extracted datas
-data = []
-   
-for x,y in positions: 
-   
-    cmd = [ "bash", "test.sh", "-l", node_id, "-k", str(iterations), "-n", str(network), "-u", username ]
-
-    result = subprocess.run(
-        cmd, 
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-     )
+    setup()
+    print("Welcome to the OpenBuilds CONTROL Python Client V1.01!")
+    print("You can run commands, jobs, or set axes to zero externally to control gantry")
+    print("You can also specify grid points in coordinate space and have gantry collect RSSI values at each point.")
+    try:
+        a = input("Press Enter to continue or type 'exit' to quit: ")
+        if a.lower() == 'exit':
+            print("Exiting...")
+            sys.exit(0)
+    except KeyboardInterrupt:
+        print("\nKeyboardInterrupt detected. Exiting...")
+    menu()
     
-    if result.returncode != 0: 
-        print(f" Error at ({x},{y}): {result.stderr.strip()}")
 
     
-    matches = rssi_pattern.findall(result.stdout)
-   
-    rssi_values = []
     
-    for node,rssi in matches:
-        if node == node_id:
-            rssi_values.append(int(rssi))
-
-    data.append([x, y, rssi_values])
-
-print(matches)
-
-header = ["X", "Y", "Pi"]
-with open(output_csv, "w", newline="") as file: 
-    writer = csv.writer(file)
-
-    writer.writerow(header)
-    for row in data: 
-        writer.writerow([row[0], row[1], row[2]])
-
-    result = job()
-
+ 
+    
     if result:
         grid_size, start_position, end_position, matrix, coordinate_map = result
 
@@ -299,3 +342,6 @@ with open(output_csv, "w", newline="") as file:
             for j in range(grid_size[1]):
                 print(f"[{i}][{j}] -> {coordinate_map[i][j]}")
             print()  # Newline between rows
+    
+    sio.wait()       
+

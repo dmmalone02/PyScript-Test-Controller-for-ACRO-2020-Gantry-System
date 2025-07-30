@@ -47,3 +47,11 @@ G3
 ### M7, M8, M9: Coolant Control
 ### M56: Parking Motion Override Control
 </details>
+
+
+# From https://builds.openbuilds.com/threads/reading-values-from-openbuilds-control-software.15867/
+#socket.emit("runJob", {
+    #data = "G1 .... gcode block with \n linebreaks etc",
+    #isJob = true, // if isjob==true, it gets stored and can be retrieved when the UI restart/refreshes, use for actual jobs, for quick little tasks, set to false
+    #completedMsg = "String you want to print in control in a popup on completion"
+#});
